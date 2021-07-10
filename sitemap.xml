@@ -2,12 +2,19 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
   xmlns:xhtml="http://www.w3.org/1999/xhtml">
   <url>
-    <loc>http://4everming.github.io/categories/</loc>
+    <loc>https://4everming.github.io/posts/</loc>
+    <lastmod>2021-07-10T08:47:11+01:00</lastmod>
   </url><url>
-    <loc>http://4everming.github.io/tags/</loc>
+    <loc>https://4everming.github.io/posts/bitfusion-on-kubernetes%E4%B8%AD%E6%96%87/</loc>
+    <lastmod>2021-07-10T08:47:11+01:00</lastmod>
   </url><url>
-    <loc>http://4everming.github.io/</loc>
+    <loc>https://4everming.github.io/</loc>
+    <lastmod>2021-07-10T08:47:11+01:00</lastmod>
   </url><url>
-    <loc>http://4everming.github.io/search/</loc>
+    <loc>https://4everming.github.io/categories/</loc>
+  </url><url>
+    <loc>https://4everming.github.io/tags/</loc>
+  </url><url>
+    <loc>https://4everming.github.io/search/</loc>
   </url>
 </urlset>

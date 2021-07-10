@@ -1,0 +1,717 @@
+<!doctype html>
+<html lang="en-us">
+<head>
+
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    
+
+    <title>在Kubernetes中使用Bitfusion | 小明的博客</title>
+    <meta property="og:title" content="在Kubernetes中使用Bitfusion - 小明的博客">
+    <meta property="og:type" content="article">
+        
+    <meta property="article:published_time" content='2021-07-10T08:47:11&#43;08:00'>
+        
+        
+    <meta property="article:modified_time" content='2021-07-10T08:47:11&#43;08:00'>
+        
+    <meta name="Keywords" content="">
+    <meta name="description" content="在Kubernetes中使用Bitfusion">
+        
+    <meta name="author" content="">
+    <meta property="og:url" content="https://4everming.github.io/posts/bitfusion-on-kubernetes%E4%B8%AD%E6%96%87/">
+    <link rel="shortcut icon" href='/favicon.ico'  type="image/x-icon">
+
+    <link rel="stylesheet" href='/css/normalize.css'>
+    <link rel="stylesheet" href='/css/style.css'>
+    <script type="text/javascript" src="//cdn.bootcdn.net/ajax/libs/jquery/3.4.1/jquery.min.js"></script>
+
+    
+    
+    
+    
+    
+    
+</head>
+
+
+<body>
+    <header id="header" class="clearfix">
+    <div class="container">
+        <div class="col-group">
+            <div class="site-name ">
+                
+                    <a id="logo" href="https://4everming.github.io/">
+                        小明的博客
+                    </a>
+                
+                
+            </div>
+            <div>
+                <nav id="nav-menu" class="clearfix">
+                    <a class="" href="https://4everming.github.io/">首页</a>
+                    
+                    <a  href="https://4everming.github.io/archives/" title="归档">归档</a>
+                    
+                    <a  href="https://4everming.github.io/about/" title="关于">关于</a>
+                    
+                </nav>
+            </div>
+        </div>
+    </div>
+</header>
+
+    <div id="body">
+        <div class="container">
+            <div class="col-group">
+
+                <div class="col-8" id="main">
+                    
+<div class="res-cons">
+    
+    <article class="post">
+        <header>
+            <h1 class="post-title">在Kubernetes中使用Bitfusion</h1>
+        </header>
+        <date class="post-meta meta-date">
+            2021年7月10日
+        </date>
+        
+        
+        
+        <div class="post-content">
+            <p>目前的GPU虚拟化解决方案存在一些不足:<!-- raw HTML omitted --></p>
+<ul>
+<li>GPU计算力未得到充分利用<!-- raw HTML omitted --></li>
+<li>无法较好的隔离GPU资源或无法动态的调整资源隔离粒度<!-- raw HTML omitted --></li>
+<li>只能使用本地的GPU资源<!-- raw HTML omitted --></li>
+<li>应用程序调度困难<!-- raw HTML omitted --></li>
+</ul>
+<p>Bitfusion通过提供一个远程GPU池来解决以上这些问题。<!-- raw HTML omitted -->
+Bitfusion将GPU作为一等公民，使得GPU可以像计算资源一样被抽象、分区、自动化和共享。另一方面，Kubernetes已经成为事实上的部署和管理机器学习工作负载的平台。</p>
+<p>然而，Kubernetes没有提供一种原生方式来使用Bitfusion的远程GPU池。这一限制成为Kubernetes上的作业使用Bitfusion GPU的关键挑战。Kubernetes需要一种友好的方式来使用Bitfusion GPU资源:<!-- raw HTML omitted --></p>
+<ul>
+<li>支持资源管理<!-- raw HTML omitted --></li>
+<li>支持GPU池管理<!-- raw HTML omitted --></li>
+</ul>
+<p>本项目通过允许Kubernetes使用Bitfusion的方式来解决这些问题</p>
+<h2 id="1架构">1.架构</h2>
+<p>
+        <img class="mx-auto" alt="" src="https://github.com/vmware/bitfusion-with-kubernetes-integration/blob/main/bitfusion_device_plugin/diagrams/DevicePluginArchitecture.png" />   
+    </p>
+<p>我们通过以下两个组件来实现允许Kubernetes使用Bitfusion的目的。</p>
+<ul>
+<li>1.bitfusion-device-plugin<!-- raw HTML omitted --></li>
+<li>2.bitfusion-webhook<!-- raw HTML omitted --></li>
+</ul>
+<p>组件1和组件2分别内置在独立的Docker 镜像中。
+<strong>bitfusion-device-plugin</strong> 作为DaemonSet 运行在kubelet所在的每个工作节点上。
+<strong>bitfusion-webhook</strong> 作为Deployment 运行在Kubernetes主节点上。</p>
+<h2 id="2前置条件">2.前置条件</h2>
+<ul>
+<li>安装机器的操作系统为Ubuntu Linux</li>
+<li>OpenSSL需要安装在Ubuntu上</li>
+<li>Kubernetes 1.17+</li>
+<li>Bitfusion 2.5+</li>
+<li>kubectl和docker命令可以正常使用</li>
+</ul>
+<p>如果需要启用配额功能，需要更新以下的yaml文件。</p>
+<ul>
+<li>修改bitfusion-injector.yaml文件。</li>
+</ul>
+<pre><code>vim bitfusion-with-kubernetes-integration/bitfusion_device_plugin/webhook/deployment/bitfusion-injector.yaml
+</code></pre><ul>
+<li>为TOTAL_GPU_MEMORY设置合适的值，TOTAL_GPU_MEMORY代表Bitfusion Server所管理的GPU物理设备的显存大小，单位是MB。</li>
+</ul>
+<pre><code>apiVersion: apps/v1
+...
+          env:
+            - name: TOTAL_GPU_MEMORY
+              value: 16000
+...
+
+</code></pre><h3 id="21-获取bitfusion的token文件">2.1 获取Bitfusion的token文件</h3>
+<p>为了启用Bitfusion，用户必须生成一个用于授权的Bitfusion Token，并将相关的tar文件下载到安装机器上。
+按照以下步骤从vCenter获取Token:<!-- raw HTML omitted -->
+Step 1. 登录 vCenter<!-- raw HTML omitted -->
+Step 2. 在插件部分点击Bitfusion<!-- raw HTML omitted -->
+
+        <img class="mx-auto" alt="" src="https://github.com/vmware/bitfusion-with-kubernetes-integration/blob/main/bitfusion_device_plugin/diagrams/click-bitfusion-plugin.png" />   
+    </p>
+<p>Step 3. 选择Tokens 标签，然后选择要下载的适当的token<!-- raw HTML omitted -->
+
+        <img class="mx-auto" alt="" src="https://github.com/vmware/bitfusion-with-kubernetes-integration/blob/main/bitfusion_device_plugin/diagrams/click-tokens-tag.png" />   
+    </p>
+<p>Step 4. 点击 DOWNLOAD 按钮, 在此之前需要确保token是可用的<!-- raw HTML omitted -->
+
+        <img class="mx-auto" alt="" src="https://github.com/vmware/bitfusion-with-kubernetes-integration/blob/main/bitfusion_device_plugin/diagrams/click-download-tag.png" />   
+    </p>
+<p>如果列表中没有可用的token, 需要点击 NEW TOKEN 来创建Token.
+更多详情，请参阅:
+<a href="https://docs.vmware.com/en/VMware-vSphere-Bitfusion/2.5/Install-Guide/GUID-361A9C59-BB22-4BF0-9B05-8E80DE70BE5B.html">https://docs.vmware.com/en/VMware-vSphere-Bitfusion/2.5/Install-Guide/GUID-361A9C59-BB22-4BF0-9B05-8E80DE70BE5B.html</a></p>
+<h3 id="22-使用bitfusion-baremetal-token创建kubernetes-secret">2.2 使用Bitfusion Baremetal token创建Kubernetes secret</h3>
+<p>将Bitfusion Baremetal Token文件上传到安装机器。使用以下命令解压缩文件:</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-shell" data-lang="shell">$ mkdir tokens   
+$ tar -xvf ./2BgkZdN.tar -C tokens
+</code></pre></div><p>现在我们得到了三个文件在目录 tokens/ 中，分别是: ca.crt, client.yaml 和 services.conf :</p>
+<pre><code>tokens
+├── ca.crt
+├── client.yaml
+└── servers.conf
+</code></pre><p>然后使用以下命令在Kubernetes中的kube-system 命名空间中创建一个secret :</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-shell" data-lang="shell">$ kubectl create secret generic bitfusion-secret --from-file<span style="color:#f92672">=</span>tokens -n kube-system
+</code></pre></div><p>更多关于kubectl 信息，请参阅:  <a href="https://kubernetes.io/docs/reference/kubectl/overview/">https://kubernetes.io/docs/reference/kubectl/overview/</a></p>
+<h2 id="3快速开始">3.快速开始</h2>
+<p>这里有两种部署的方式，可以选择其中任意一种:</p>
+<ul>
+<li>使用已经构建好的容器镜像部署</li>
+<li>使用代码构建容器镜像，并用生成的镜像部署</li>
+</ul>
+<h3 id="31-部署方式1-使用已经构建好的容器镜像部署-推荐">3.1 部署方式1: 使用已经构建好的容器镜像部署 (推荐)</h3>
+<p>使用以下命令克隆源代码:</p>
+<p>$ git clone <a href="https://github.com/vmware/bitfusion-with-kubernetes-integration.git">https://github.com/vmware/bitfusion-with-kubernetes-integration.git</a></p>
+<p>使用以下命令部署Bitfusion device plugin和其他相关组件，需要确保Kubernetes集群可以连接到Internet。</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-shell" data-lang="shell">$ cd bitfusion-with-kubernetes-integration-main/bitfusion_device_plugin
+$ make deploy
+</code></pre></div><h3 id="32-部署方式2-使用代码构建容器镜像并用生成的镜像部署">3.2 部署方式2: 使用代码构建容器镜像，并用生成的镜像部署</h3>
+<p>用户可以选择从源代码构建容器镜像 ，而不是使用预先构建的容器镜像。在镜像构建完成后，它们也可以被推送到镜像仓库 (Docker Hub或本地的镜像仓库)。</p>
+<p>使用以下命令克隆源代码:</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-shell" data-lang="shell">$ git clone https://github.com/vmware/bitfusion-with-kubernetes-integration.git
+</code></pre></div><p>在开始构建过程之前，需要修改<strong>Makefile</strong>中一些变量的值:</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-shell" data-lang="shell">$ cd bitfusion-with-kubernetes-integration-main/bitfusion_device_plugin
+$ vim Makefile
+</code></pre></div><p>大多数变量的值不需要更改。如果要将镜像推送到镜像仓库，请确保IMAGE_REPO变量的值被设置为所选择的正确镜像仓库地址 (它的默认值是 docker.io/bitfusiondeviceplugin ):</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-shell" data-lang="shell"><span style="color:#75715e"># Variables below are the configuration of Docker images and repo for this project.</span>
+<span style="color:#75715e"># Update these variable values with your own configuration if necessary.</span>
+
+IMAGE_REPO ?<span style="color:#f92672">=</span> docker.io/bitfusiondeviceplugin
+DEVICE_IMAGE_NAME ?<span style="color:#f92672">=</span> bitfusion-device-plugin
+WEBHOOK_IMAGE_NAME ?<span style="color:#f92672">=</span> bitfusion-webhook
+PKG_IMAGE_NAME ?<span style="color:#f92672">=</span> bitfusion-client
+IMAGE_TAG  ?<span style="color:#f92672">=</span> 0.1
+</code></pre></div><p>现在可以使用下面的命令构建容器镜像了:</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-shell" data-lang="shell">$ make build-image
+</code></pre></div><p>可以用下面的命令检查容器镜像的构建结果:</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-shell" data-lang="shell">$ docker images
+REPOSITORY                                                                         TAG
+docker.io/bitfusiondeviceplugin/bitfusion-device-plugin                            0.1                
+docker.io/bitfusiondeviceplugin/bitfusion-webhook                                  0.1                
+docker.io/bitfusiondeviceplugin/bitfusion-client                                   0.1
+</code></pre></div><p>(推荐使用的可选项)如果需要将容器镜像推送到容器仓库，请使用以下命令推送它们。如果需要，可以使用“docker login”命令登录镜像仓库。(<a href="https://docs.docker.com/engine/reference/commandline/login/">如何使用docker login?</a>)</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-shell" data-lang="shell">$ make push-image
+</code></pre></div><p>注意: 如果没有可用的镜像仓库，可以将容器镜像导出到文件，然后拷贝到Kubernetes集群的每个工作节点。使用docker命令将容器镜像文件保存为tar文件，并手动分发到Kubernetes节点。然后从每个节点上的tar文件加载容器镜像，详见<a href="https://docs.docker.com/engine/reference/commandline/save/">docker命令文档</a> 。<!-- raw HTML omitted --></p>
+<p>使用以下命令部署Bitfusion device plugin和其他相关组件:</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-shell" data-lang="shell">$ make deploy
+</code></pre></div><h3 id="33-部署的环境的验证">3.3 部署的环境的验证</h3>
+<p>通过&quot;部署方式1&quot;或&quot;部署方式2&quot;完成安装后，使用以下命令查看命名空间&quot;bwki&quot;中是否正确启动了所有组件:</p>
+<p>检查 device plugin 是否正在运行:</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-shell" data-lang="shell">$ kubectl get pods -n kube-system
+
+NAME                            READY   STATUS    RESTARTS   AGE
+bitfusion-device-plugin-cfr87   1/1     Running   <span style="color:#ae81ff">0</span>          6m13s
+</code></pre></div><p>检查webhook 是否正在运行:</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-shell" data-lang="shell">$ kubectl  get pod -n bwki
+
+NAME                                            READY   STATUS    RESTARTS   AGE
+bitfusion-webhook-deployment-6dbc6df664-td6t7   1/1     Running   <span style="color:#ae81ff">0</span>          7m49s
+</code></pre></div><p>检查其他部署的组件状态</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-shell" data-lang="shell">$ kubectl get configmap -n bwki
+
+NAME                                DATA   AGE
+bwki-webhook-configmap              <span style="color:#ae81ff">1</span>      71m
+</code></pre></div><div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-shell" data-lang="shell">$ kubectl get serviceaccount  -n bwki
+
+NAME                           SECRETS   AGE
+bitfusion-webhook-deployment   <span style="color:#ae81ff">1</span>         72m
+</code></pre></div><div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-shell" data-lang="shell">$ kubectl get ValidatingWebhookConfiguration  -n bwki
+
+NAME                          CREATED AT
+validation.bitfusion.io-cfg   2021-03-25T05:29:17Z
+</code></pre></div><div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-shell" data-lang="shell">$ kubectl get MutatingWebhookConfiguration   -n bwki
+
+NAME                          CREATED AT
+bwki-webhook-cfg              2021-03-25T05:29:17Z
+</code></pre></div><div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-shell" data-lang="shell">$ kubectl get svc   -n bwki
+
+NAME                          TYPE        CLUSTER-IP    EXTERNAL-IP   PORT<span style="color:#f92672">(</span>S<span style="color:#f92672">)</span>   AGE
+bwki-webhook-svc              ClusterIP   10.101.39.4   &lt;none&gt;        443/TCP   76m
+</code></pre></div><h2 id="4-在kubernetes中使用bitfusion资源创建任务">4. 在Kubernetes中使用Bitfusion资源创建任务</h2>
+<p>完成安装后，用户可以编写Kubernetes的YAML文件来使用Bitfusion资源。在YAML文件中有以下几个与Bitfusion资源相关的参数:</p>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">关键字</th>
+<th style="text-align:left">值</th>
+<th style="text-align:left">描述</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">auto-management/bitfusion</td>
+<td style="text-align:left">all / none / injection</td>
+<td style="text-align:left">[all] 自动配置Bitfusion client（Bitfusion client安装，Bitfusion token导入进容器），自动改写容器的运行命令，加入bitfusion run的前缀及相应参数<!-- raw HTML omitted -->[injection] 仅为该容器自动配置Bitfusion client，不改写容器的运行命令<!-- raw HTML omitted -->[none] Bitfusion device plugin对该容器不做任何动作</td>
+</tr>
+<tr>
+<td style="text-align:left">bitfusion.io/gpu-amount</td>
+<td style="text-align:left">正整数</td>
+<td style="text-align:left">从Bitfusion Server集群所请求的GPU卡的个数</td>
+</tr>
+<tr>
+<td style="text-align:left">bitfusion.io/gpu-percent</td>
+<td style="text-align:left">正整数</td>
+<td style="text-align:left">从Bitfusion Server集群所请求的每一张GPU卡的显存百分比</td>
+</tr>
+<tr>
+<td style="text-align:left">bitfusion.io/gpu-memory</td>
+<td style="text-align:left">正整数</td>
+<td style="text-align:left">所请求的每一张GPU卡的显存数,默认单位是bit. 也可以指定其他Kubernetes的单位(Mi,M,G,Gi)</td>
+</tr>
+<tr>
+<td style="text-align:left">bitfusion-client/os</td>
+<td style="text-align:left">ubuntu18 / ubuntu20 / centos7 / centos8</td>
+<td style="text-align:left">用来指定Bitfusion client所在容器guest OS的版本</td>
+</tr>
+<tr>
+<td style="text-align:left">bitfusion-client/version</td>
+<td style="text-align:left">250</td>
+<td style="text-align:left">Bitfusion client的版本，250代表Bitfusion client 2.5.0。目前镜像仅支持2.5.0，后续会陆续更新。</td>
+</tr>
+</tbody>
+</table>
+<h3 id="41-方式-1通过-gpu-percent-参数指定bitfusion资源">4.1. 方式 1：通过 gpu-percent 参数指定Bitfusion资源</h3>
+<p>编辑任务的YAML文件example/pod.yaml</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-yaml" data-lang="yaml"><span style="color:#f92672">apiVersion</span>: <span style="color:#ae81ff">v1</span>
+<span style="color:#f92672">kind</span>: <span style="color:#ae81ff">Pod</span>
+<span style="color:#f92672">metadata</span>:
+  <span style="color:#f92672">annotations</span>:
+    <span style="color:#f92672">auto-management/bitfusion</span>: <span style="color:#e6db74">&#34;all&#34;</span>
+    <span style="color:#f92672">bitfusion-client/os</span>: <span style="color:#e6db74">&#34;ubuntu18&#34;</span>
+    <span style="color:#f92672">bitfusion-client/version</span>: <span style="color:#e6db74">&#34;250&#34;</span>
+  <span style="color:#f92672">name</span>: <span style="color:#ae81ff">bf-pkgs</span>
+  <span style="color:#75715e"># You can specify any namespace</span>
+  <span style="color:#f92672">namespace</span>: <span style="color:#ae81ff">tensorflow-benchmark</span>
+<span style="color:#f92672">spec</span>:
+  <span style="color:#f92672">containers</span>:
+    - <span style="color:#f92672">image</span>: <span style="color:#ae81ff">nvcr.io/nvidia/tensorflow:19.07-py3</span>
+      <span style="color:#f92672">imagePullPolicy</span>: <span style="color:#ae81ff">IfNotPresent</span>
+      <span style="color:#f92672">name</span>: <span style="color:#ae81ff">bf-pkgs</span>
+      <span style="color:#f92672">command</span>: [<span style="color:#e6db74">&#34;python /benchmark/scripts/tf_cnn_benchmarks/tf_cnn_benchmarks.py --local_parameter_device=gpu --batch_size=32 --model=inception3&#34;</span>]
+      <span style="color:#f92672">resources</span>:
+        <span style="color:#f92672">limits</span>:
+          <span style="color:#75715e"># Request one GPU for this Pod from the Bitfusion cluster</span>
+          <span style="color:#f92672">bitfusion.io/gpu-amount</span>: <span style="color:#ae81ff">1</span>
+          <span style="color:#75715e"># 50 percent of each GPU to be consumed</span>
+          <span style="color:#f92672">bitfusion.io/gpu-percent</span>: <span style="color:#ae81ff">50</span>
+      <span style="color:#f92672">volumeMounts</span>:
+        - <span style="color:#f92672">name</span>: <span style="color:#ae81ff">code</span>
+          <span style="color:#f92672">mountPath</span>: <span style="color:#ae81ff">/benchmark</span>
+    <span style="color:#f92672">volumes</span>:
+        - <span style="color:#f92672">name</span>: <span style="color:#ae81ff">code</span>
+          <span style="color:#75715e"># The Benchmarks used for the test came from: https://github.com/tensorflow/benchmarks/tree/tf_benchmark_stage </span>
+          <span style="color:#75715e"># Please make sure you have the corresponding content in /home/benchmarks directory on your node</span>
+          <span style="color:#f92672">hostPath</span>:
+            <span style="color:#f92672">path</span>: <span style="color:#ae81ff">/home/benchmarks</span>
+</code></pre></div><p>运行以下命令提交任务：</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">$ kubectl create namespace tensorflow-benchmark
+$ kubectl create -f example/pod.yaml
+</code></pre></div><h3 id="42-方式-2通过-gpu-memory-参数指定bitfusion资源">4.2 方式 2：通过 gpu-memory 参数指定Bitfusion资源</h3>
+<p>编辑任务的YAML文件example/pod-memory.yaml</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-yaml" data-lang="yaml"><span style="color:#f92672">apiVersion</span>: <span style="color:#ae81ff">v1</span>
+<span style="color:#f92672">kind</span>: <span style="color:#ae81ff">Pod</span>
+<span style="color:#f92672">metadata</span>:
+  <span style="color:#f92672">annotations</span>:
+    <span style="color:#f92672">auto-management/bitfusion</span>: <span style="color:#e6db74">&#34;all&#34;</span>
+    <span style="color:#f92672">bitfusion-client/os</span>: <span style="color:#e6db74">&#34;ubuntu18&#34;</span>
+    <span style="color:#f92672">bitfusion-client/version</span>: <span style="color:#e6db74">&#34;250&#34;</span>
+  <span style="color:#f92672">name</span>: <span style="color:#ae81ff">bf-pkgs</span>
+  <span style="color:#75715e"># You can specify any namespace</span>
+  <span style="color:#f92672">namespace</span>: <span style="color:#ae81ff">tensorflow-benchmark</span>
+<span style="color:#f92672">spec</span>:
+  <span style="color:#f92672">containers</span>:
+    - <span style="color:#f92672">image</span>: <span style="color:#ae81ff">nvcr.io/nvidia/tensorflow:19.07-py3</span>
+      <span style="color:#f92672">imagePullPolicy</span>: <span style="color:#ae81ff">IfNotPresent</span>
+      <span style="color:#f92672">name</span>: <span style="color:#ae81ff">bf-pkgs</span>
+      <span style="color:#f92672">command</span>: [<span style="color:#e6db74">&#34;python /benchmark/scripts/tf_cnn_benchmarks/tf_cnn_benchmarks.py --local_parameter_device=gpu --batch_size=32 --model=inception3&#34;</span>]
+      <span style="color:#f92672">resources</span>:
+        <span style="color:#f92672">limits</span>:
+          <span style="color:#f92672">bitfusion.io/gpu-amount</span>: <span style="color:#ae81ff">1</span>
+          <span style="color:#f92672">bitfusion.io/gpu-memory</span>: <span style="color:#ae81ff">8000M</span>
+      <span style="color:#f92672">volumeMounts</span>:
+        - <span style="color:#f92672">name</span>: <span style="color:#ae81ff">code</span>
+          <span style="color:#f92672">mountPath</span>: <span style="color:#ae81ff">/benchmark</span>
+    <span style="color:#f92672">volumes</span>:
+        - <span style="color:#f92672">name</span>: <span style="color:#ae81ff">code</span>
+          <span style="color:#75715e"># The Benchmarks used for the test came from: https://github.com/tensorflow/benchmarks/tree/tf_benchmark_stage </span>
+          <span style="color:#75715e"># Please make sure you have the corresponding content in /home/benchmarks directory on your node</span>
+          <span style="color:#f92672">hostPath</span>:
+            <span style="color:#f92672">path</span>: <span style="color:#ae81ff">/home/benchmarks</span>
+</code></pre></div><p>运行以下命令提交任务：</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-shell" data-lang="shell">$ kubectl create namespace tensorflow-benchmark
+$ kubectl create -f example/pod-memory.yaml
+</code></pre></div><p><strong>如果任务成功运行，会得到以下日志输出:</strong></p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-text" data-lang="text">[INFO] 2021-03-27T04:26:40Z Query server 192.168.1.100:56001 gpu availability
+[INFO] 2021-03-27T04:26:41Z Choosing GPUs from server list [192.168.1.100:56001]
+[INFO] 2021-03-27T04:26:41Z Requesting GPUs [0] with 8080 MiB of memory from server 0, with version 2.5.0-fd3e4839...
+Requested resources:
+Server List: 192.168.1.100:56001
+Client idle timeout: 0 min
+[INFO] 2021-03-27T04:26:42Z Locked 1 GPUs with partial memory 0.5, configuration saved to &#39;/tmp/bitfusion125236687&#39;
+[INFO] 2021-03-27T04:26:42Z Running client command &#39;python /benchmark/scripts/tf_cnn_benchmarks/tf_cnn_benchmarks.py --local_parameter_device=gpu --batch_size=32 --model=inception3&#39; on 1 GPUs, with the following servers:
+[INFO] 2021-03-27T04:26:42Z 192.168.1.100 55001 ab4a56d5-8df4-4c93-891d-1c5814cf83f6 56001 2.5.0-fd3e4839
+
+2021-03-27 04:26:43.511803: I tensorflow/stream_executor/platform/default/dso_loader.cc:42] Successfully opened dynamic library libcudart.so.10.1
+
+......
+
+Instructions for updating:
+non-resource variables are not supported in the long term
+2021-03-27 04:26:48.173243: I tensorflow/core/platform/profile_utils/cpu_utils.cc:94] CPU Frequency: 2394455000 Hz
+2021-03-27 04:26:48.174378: I tensorflow/compiler/xla/service/service.cc:168] XLA service 0x4c8ad60 executing computations on platform Host. Devices:
+2021-03-27 04:26:48.174426: I tensorflow/compiler/xla/service/service.cc:175]   StreamExecutor device (0): &lt;undefined&gt;, &lt;undefined&gt;
+2021-03-27 04:26:48.184024: I tensorflow/stream_executor/platform/default/dso_loader.cc:42] Successfully opened dynamic library libcuda.so.1
+2021-03-27 04:26:54.831820: I tensorflow/stream_executor/cuda/cuda_gpu_executor.cc:1005] successful NUMA node read from SysFS had negative value (-1), but there must be at least one NUMA node, so returning NUMA node zero
+2021-03-27 04:26:55.195722: I tensorflow/compiler/xla/service/service.cc:168] XLA service 0x4c927b0 executing computations on platform CUDA. Devices:
+2021-03-27 04:26:55.195825: I tensorflow/compiler/xla/service/service.cc:175]   StreamExecutor device (0): Tesla V100-PCIE-16GB, Compute Capability 7.0
+2021-03-27 04:26:56.476786: I tensorflow/stream_executor/cuda/cuda_gpu_executor.cc:1005] successful NUMA node read from SysFS had negative value (-1), but there must be at least one NUMA node, so returning NUMA node zero
+2021-03-27 04:26:56.846965: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1640] Found device 0 with properties:
+name: Tesla V100-PCIE-16GB major: 7 minor: 0 memoryClockRate(GHz): 1.38
+pciBusID: 0000:00:00.0
+2021-03-27 04:26:56.847095: I tensorflow/stream_executor/platform/default/dso_loader.cc:42] Successfully opened dynamic library libcudart.so.10.1
+2021-03-27 04:26:56.858148: I tensorflow/stream_executor/platform/default/dso_loader.cc:42] Successfully opened dynamic library libcublas.so.10
+2021-03-27 04:26:56.870662: I tensorflow/stream_executor/platform/default/dso_loader.cc:42] Successfully opened dynamic library libcufft.so.10
+2021-03-27 04:26:56.872082: I tensorflow/stream_executor/platform/default/dso_loader.cc:42] Successfully opened dynamic library libcurand.so.10
+2021-03-27 04:26:56.884804: I tensorflow/stream_executor/platform/default/dso_loader.cc:42] Successfully opened dynamic library libcusolver.so.10
+2021-03-27 04:26:56.891062: I tensorflow/stream_executor/platform/default/dso_loader.cc:42] Successfully opened dynamic library libcusparse.so.10
+2021-03-27 04:26:56.916430: I tensorflow/stream_executor/platform/default/dso_loader.cc:42] Successfully opened dynamic library libcudnn.so.7
+2021-03-27 04:26:57.108177: I tensorflow/stream_executor/cuda/cuda_gpu_executor.cc:1005] successful NUMA node read from SysFS had negative value (-1), but there must be at least one NUMA node, so returning NUMA node zero
+2021-03-27 04:26:57.699172: I tensorflow/stream_executor/cuda/cuda_gpu_executor.cc:1005] successful NUMA node read from SysFS had negative value (-1), but there must be at least one NUMA node, so returning NUMA node zero
+2021-03-27 04:26:58.487127: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1763] Adding visible gpu devices: 0
+2021-03-27 04:26:58.487327: I tensorflow/stream_executor/platform/default/dso_loader.cc:42] Successfully opened dynamic library libcudart.so.10.1
+2021-03-27 04:53:53.568256: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1181] Device interconnect StreamExecutor with strength 1 edge matrix:
+2021-03-27 04:53:53.568703: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1187]      0
+2021-03-27 04:53:53.569011: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1200] 0:   N
+2021-03-27 04:53:53.939681: I tensorflow/stream_executor/cuda/cuda_gpu_executor.cc:1005] successful NUMA node read from SysFS had negative value (-1), but there must be at least one NUMA node, so returning NUMA node zero
+2021-03-27 04:53:54.482940: I tensorflow/stream_executor/cuda/cuda_gpu_executor.cc:1005] successful NUMA node read from SysFS had negative value (-1), but there must be at least one NUMA node, so returning NUMA node zero
+2021-03-27 04:53:54.846537: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1326] Created TensorFlow device (/job:localhost/replica:0/task:0/device:GPU:0 with 7010 MB memory) -&gt; physical GPU (device: 0, name: Tesla V100-PCIE-16GB, pci bus id: 0000:00:00.0, compute capability: 7.0)
+
+......
+
+TensorFlow:  1.14
+Model:       inception3
+Dataset:     imagenet (synthetic)
+Mode:        training
+SingleSess:  False
+Batch size:  32 global
+             32 per device
+Num batches: 100
+Num epochs:  0.00
+Devices:     [&#39;/gpu:0&#39;]
+NUMA bind:   False
+Data format: NCHW
+Optimizer:   sgd
+Variables:   parameter_server
+==========
+Generating training model
+Initializing graph
+Running warm up
+Done warm up
+Step    Img/sec total_loss
+1       images/sec: 199.4 +/- 0.0 (jitter = 0.0)        7.312
+10      images/sec: 196.6 +/- 2.1 (jitter = 5.7)        7.290
+20      images/sec: 198.3 +/- 1.3 (jitter = 4.5)        7.351
+30      images/sec: 198.4 +/- 0.9 (jitter = 3.8)        7.300
+40      images/sec: 199.4 +/- 0.8 (jitter = 4.1)        7.250
+50      images/sec: 199.8 +/- 0.7 (jitter = 4.6)        7.283
+60      images/sec: 200.1 +/- 0.6 (jitter = 4.2)        7.301
+70      images/sec: 199.8 +/- 0.6 (jitter = 4.2)        7.266
+80      images/sec: 200.1 +/- 0.6 (jitter = 4.4)        7.286
+90      images/sec: 199.9 +/- 0.5 (jitter = 4.4)        7.334
+100     images/sec: 199.9 +/- 0.5 (jitter = 4.0)        7.380
+----------------------------------------------------------------
+total images/sec: 199.65
+----------------------------------------------------------------
+
+......
+</code></pre></div><h3 id="43-auto-managementbitfusion的设置">4.3 auto-management/bitfusion的设置</h3>
+<p>当设置auto-management/bitfusion的值为all时, 经过webhook的处理之后，通过以下方式可以查看改写后的容器命令</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">$ kubectl edit pod -n tensorflow-benchmark bf-pkgs
+</code></pre></div><div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-yaml" data-lang="yaml"><span style="color:#f92672">apiVersion</span>: <span style="color:#ae81ff">v1</span>
+<span style="color:#f92672">kind</span>: <span style="color:#ae81ff">Pod</span>
+<span style="color:#f92672">metadata</span>:
+  <span style="color:#f92672">annotations</span>:
+    <span style="color:#75715e"># update annotations</span>
+    <span style="color:#f92672">auto-management/status</span>: <span style="color:#ae81ff">injected</span>
+  <span style="color:#f92672">name</span>: <span style="color:#ae81ff">bf-pkgs</span>
+  <span style="color:#f92672">namespace</span>: <span style="color:#ae81ff">tensorflow-benchmark</span>
+<span style="color:#f92672">spec</span>:
+  <span style="color:#f92672">containers</span>:
+  <span style="color:#75715e"># update command</span>
+  - <span style="color:#f92672">command</span>:
+    - <span style="color:#ae81ff">/bin/bash</span>
+    - -<span style="color:#ae81ff">c</span>
+    - <span style="color:#ae81ff">/bitfusion/bitfusion-client-ubuntu1804_2.5.1-13/usr/bin/bitfusion run -n 1 -p</span>
+      <span style="color:#ae81ff">0.500000</span> <span style="color:#ae81ff">python /benchmark/scripts/tf_cnn_benchmarks/tf_cnn_benchmarks.py --local_parameter_device=gpu</span>
+      --<span style="color:#ae81ff">batch_size=32 --model=inception3</span>
+    <span style="color:#f92672">env</span>:
+    <span style="color:#75715e"># add LD_LIBRARY_PATH</span>
+    - <span style="color:#f92672">name</span>: <span style="color:#ae81ff">LD_LIBRARY_PATH</span>
+      <span style="color:#f92672">value</span>: <span style="color:#ae81ff">/bitfusion/bitfusion-client-ubuntu1804_2.5.1-13/opt/bitfusion/lib/x86_64-linux-gnu/lib/:/usr/local/nvidia/lib:/usr/local/nvidia/lib64</span>
+    <span style="color:#f92672">image</span>: <span style="color:#ae81ff">nvcr.io/nvidia/tensorflow:19.07-py3</span>
+    <span style="color:#f92672">imagePullPolicy</span>: <span style="color:#ae81ff">IfNotPresent</span>
+    <span style="color:#f92672">name</span>: <span style="color:#ae81ff">bf-pkgs</span>
+    <span style="color:#f92672">resources</span>:
+      <span style="color:#f92672">limits</span>:
+        <span style="color:#75715e"># update resource name</span>
+        <span style="color:#f92672">bitfusion.io/gpu</span>: <span style="color:#e6db74">&#34;50&#34;</span>
+      <span style="color:#f92672">requests</span>:
+        <span style="color:#f92672">bitfusion.io/gpu</span>: <span style="color:#e6db74">&#34;50&#34;</span>
+    <span style="color:#f92672">volumeMounts</span>:
+    - <span style="color:#f92672">mountPath</span>: <span style="color:#ae81ff">/benchmark</span>
+      <span style="color:#f92672">name</span>: <span style="color:#ae81ff">code</span>
+    <span style="color:#75715e"># add some volume</span>
+    - <span style="color:#f92672">mountPath</span>: <span style="color:#ae81ff">/etc/bitfusion</span>
+    <span style="color:#ae81ff">.......</span>
+  <span style="color:#75715e"># add initContainer</span>
+  <span style="color:#f92672">initContainers</span>:
+  - <span style="color:#f92672">command</span>:
+    - <span style="color:#ae81ff">/bin/bash</span>
+    - -<span style="color:#ae81ff">c</span>
+    - <span style="color:#e6db74">&#39; cp -ra /bitfusion/* /bitfusion-distro/ &amp;&amp; cp /root/.bitfusion/client.yaml
+</span><span style="color:#e6db74">      /client &amp;&amp; cp -r /bitfusion/bitfusion-client-centos7-2.5.0-10/opt/bitfusion/*
+</span><span style="color:#e6db74">      /workload-container-opt &#39;</span>
+    <span style="color:#f92672">image</span>: <span style="color:#ae81ff">docker.io/bitfusiondeviceplugin/bitfusion-client:0.1.1</span>
+    <span style="color:#f92672">imagePullPolicy</span>: <span style="color:#ae81ff">IfNotPresent</span>
+    <span style="color:#f92672">name</span>: <span style="color:#ae81ff">populate</span>
+    <span style="color:#ae81ff">......</span>
+</code></pre></div><p>发现容器的command中的命令被自动做了相应的改写。</p>
+<h2 id="5-配额的设置和使用可选">5. 配额的设置和使用(可选)</h2>
+<h3 id="51-设置配额">5.1 设置配额</h3>
+<p>device plugin使用的资源bitfusion.io/gpu，使用以下命令来创建配额。requests.bitfusion.io/gpu: 100代表在指定的namespace下的作业，最多可以使用Bitfusion的一张GPU卡的100%的能力。</p>
+<pre><code>cat &lt;&lt;EOF | kubectl create -f -
+apiVersion: v1
+kind: List
+items:
+- apiVersion: v1
+  kind: ResourceQuota
+  metadata:
+    name: bitfusion-quota
+    namespace: tensorflow-benchmark
+  spec:
+    hard:
+        requests.bitfusion.io/gpu: 100
+EOF 
+</code></pre><p>分别通过指定bitfusion.io/gpu-memory参数和bitfusion.io/gpu-percent参数来创建任务。</p>
+<h3 id="52-指定bitfusioniogpu-memory参数创建pod">5.2 指定bitfusion.io/gpu-memory参数创建pod：</h3>
+<p>使用以下命令创建pod</p>
+<pre><code>cat &lt;&lt;EOF | kubectl create -f -
+apiVersion: v1
+kind: Pod
+metadata:
+  annotations:
+    auto-management/bitfusion: &quot;all&quot;
+    bitfusion-client/os: &quot;ubuntu18&quot;
+    bitfusion-client/version: &quot;250&quot;
+  name: bf-pkgs
+  namespace: tensorflow-benchmark
+spec:
+  containers:
+    - image: nvcr.io/nvidia/tensorflow:19.07-py3
+      imagePullPolicy: IfNotPresent
+      name: bf-pkgs
+      command: [&quot;python /benchmark/scripts/tf_cnn_benchmarks/tf_cnn_benchmarks.py --local_parameter_device=gpu --batch_size=32 --model=inception3&quot;]
+      resources:
+        limits:
+          bitfusion.io/gpu-amount: 1
+          bitfusion.io/gpu-memory: 8000M
+      volumeMounts:
+        - name: code
+          mountPath: /benchmark
+  volumes:
+    - name: code
+      hostPath:
+        path: /home/benchmarks
+EOF
+</code></pre><p>由于TOTAL_GPU_MEMORY的值被设置为16000，代表Bitfusion集群中的GPU卡的显存是16GB。所以当这个pod请求1张GPU设备的8000M显存时，相当于申请了1张GPU卡的50%的算力，因此对于bitfusion.io/gpu资源的配额的占用是50。</p>
+<p>配额占用的计算公式：bitfusion.io/gpu配额占用 = 申请的GPU显存大小 / TOTAL_GPU_MEMORY * 申请的GPU数量 * 100；结果会向上取整。</p>
+<p>通过以下命令可以查看配额的占用情况。</p>
+<pre><code>$ kubectl describe quota -n tensorflow-benchmark bitfusion-quota 
+</code></pre><p>
+        <img class="mx-auto" alt="img" src="https://github.com/vmware/bitfusion-with-kubernetes-integration/blob/main/bitfusion_device_plugin/diagrams/quota.png?raw=true" />   
+    </p>
+<h3 id="53-指定bitfusioniogpu-percent参数创建pod">5.3 指定bitfusion.io/gpu-percent参数创建pod</h3>
+<p>使用以下命令创建pod</p>
+<pre><code>cat &lt;&lt;EOF | kubectl create -f -
+apiVersion: v1
+kind: Pod
+metadata:
+  annotations:
+    auto-management/bitfusion: &quot;all&quot;
+    bitfusion-client/os: &quot;ubuntu18&quot;
+    bitfusion-client/version: &quot;250&quot;
+  name: bf-pkgs
+  namespace: tensorflow-benchmark
+spec:
+  containers:
+    - image: nvcr.io/nvidia/tensorflow:19.07-py3
+      imagePullPolicy: IfNotPresent
+      name: bf-pkgs
+      command: [&quot;python /benchmark/scripts/tf_cnn_benchmarks/tf_cnn_benchmarks.py --local_parameter_device=gpu --batch_size=32 --model=inception3&quot;]
+      resources:
+        limits:
+          bitfusion.io/gpu-amount: 1
+          bitfusion.io/gpu-percent: 50
+      volumeMounts:
+        - name: code
+          mountPath: /benchmark
+  volumes:
+    - name: code
+      hostPath:
+        path: /home/benchmarks
+EOF
+</code></pre><p>配额占用的计算公式：bitfusion.io/gpu配额占用 = gpu占用百分比 * 申请的GPU数量 * 100；结果会向上取整。</p>
+<p>通过以下命令可以查看配额的占用情况。</p>
+<pre><code>$ kubectl describe quota -n tensorflow-benchmark bitfusion-quota 
+</code></pre><p>
+        <img class="mx-auto" alt="img" src="https://github.com/vmware/bitfusion-with-kubernetes-integration/blob/main/bitfusion_device_plugin/diagrams/quota.png?raw=true" />   
+    </p>
+<h2 id="6troubleshooting">6.Troubleshooting</h2>
+<p>如果pod 没有成功运行，使用下面的命令检查日志中的详细信息</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-shell" data-lang="shell">$ kubectl logs -n tensorflow-benchmark   bf-pkgs
+</code></pre></div><p>“tensorflow-benchmark”是pod的命名空间。“bf-pkgs”是pod的名称</p>
+<p>下面的日志显示了一些连接Bitfusion server的错误
+
+        <img class="mx-auto" alt="" src="https://github.com/vmware/bitfusion-with-kubernetes-integration/blob/main/bitfusion_device_plugin/diagrams/trouble-one.png" />   
+    </p>
+<p>检查vCenter Bitfusion插件中Bitfusion token的有效性。重新下载一个新的token，并使用以下命令更新Kubernetes中的secret :(确保在Kubernetes的每个命名空间中删除所有旧的bitfusion-secret之后再新建secret)</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-shell" data-lang="shell">$ kubectl delete secret -n kube-system bitfusion-secret
+$ kubectl delete secret -n tensorflow-benchmark  bitfusion-secret
+$ kubectl create secret generic bitfusion-secret --from-file<span style="color:#f92672">=</span>tokens -n kube-system
+$ kubectl create secret generic bitfusion-secret --from-file<span style="color:#f92672">=</span>tokens -n kube-system
+$ make deploy
+</code></pre></div><h2 id="7-备注">7. 备注</h2>
+<ol>
+<li>
+<p>Bitfusion device plugin会更新LD_LIBRARY_PATH这个环境变量的值，如果用户在构建docker镜像时指定了这个值，建议在使用这个镜像时，在yaml文件中通过以下方式来设置这个值。否则LD_LIBRARY_PATH的值可能会被覆盖。</p>
+</li>
+<li>
+<p>如果要在TKGi(Tanzu Kubernetes Grid Integrated)上部署Bitfusion device plugin，需要安装CFSSL，同时需要修改bitfusion-with-kubernetes-integration-main/bitfusion_device_plugin/Makefile文件中的K8S_PLATFORM的值为tkgi。</p>
+</li>
+</ol>
+<pre><code>K8S_PLATFORM ?= tkgi
+</code></pre>
+        </div>
+
+        
+
+
+        
+
+
+        <div class="post-meta meta-tags">
+            
+            没有标签
+            
+        </div>
+    </article>
+    
+    
+
+    
+    
+</div>
+
+                    <footer id="footer">
+    <div>
+        &copy; 2021 <a href="https://4everming.github.io/">小明的博客 By </a>
+        
+    </div>
+    <br />
+    <div>
+        <div class="github-badge">
+            <a href="https://gohugo.io/" target="_black" rel="nofollow"><span class="badge-subject">Powered by</span><span class="badge-value bg-blue">Hugo</span></a>
+        </div>
+        <div class="github-badge">
+            <a href="https://4everming.github.io/" target="_black"><span class="badge-subject">Design by</span><span class="badge-value bg-brightgreen">4everming</span></a>
+        </div>
+        <div class="github-badge">
+            <a href="https://github.com/flysnow-org/maupassant-hugo" target="_black"><span class="badge-subject">Theme</span><span class="badge-value bg-yellowgreen">Maupassant</span></a>
+        </div>
+    </div>
+</footer>
+
+
+    
+    <script type="text/javascript">
+        window.MathJax = {
+            tex2jax: {
+                inlineMath: [['$', '$']],
+                processEscapes: true
+                }
+            };
+    </script>
+    <script src='https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/MathJax.js?config=TeX-MML-AM_CHTML' async></script>
+
+<a id="rocket" href="#top"></a>
+<script type="text/javascript" src='/js/totop.js?v=0.0.0' async=""></script>
+
+
+
+
+
+
+
+                </div>
+
+                <div id="secondary">
+    <section class="widget">
+        <form id="search" action='https://4everming.github.io/search/' method="get" accept-charset="utf-8" target="_blank" _lpchecked="1">
+      
+      <input type="text" name="q" maxlength="20" placeholder="Search">
+      <input type="hidden" name="sitesearch" value="https://4everming.github.io/">
+      <button type="submit" class="submit icon-search"></button>
+</form>
+    </section>
+    
+    <section class="widget">
+        <h3 class="widget-title">最近文章</h3>
+<ul class="widget-list">
+    
+    <li>
+        <a href="https://4everming.github.io/posts/bitfusion-on-kubernetes%E4%B8%AD%E6%96%87/" title="在Kubernetes中使用Bitfusion">在Kubernetes中使用Bitfusion</a>
+    </li>
+    
+</ul>
+    </section>
+
+    
+
+    <section class="widget">
+        <h3 class="widget-title"><a href='/categories/'>分类</a></h3>
+<ul class="widget-list">
+    
+</ul>
+    </section>
+
+    <section class="widget">
+        <h3 class="widget-title"><a href='/tags/'>标签</a></h3>
+<div class="tagcloud">
+    
+</div>
+    </section>
+
+    
+
+    <section class="widget">
+        <h3 class="widget-title">其它</h3>
+        <ul class="widget-list">
+            <li><a href="https://4everming.github.io/index.xml">文章 RSS</a></li>
+        </ul>
+    </section>
+</div>
+            </div>
+        </div>
+    </div>
+</body>
+
+</html>

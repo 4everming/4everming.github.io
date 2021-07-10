@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="utf-8" standalone="yes"?>
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
-    <title>小明的博客</title>
-    <link>https://4everming.github.io/</link>
-    <description>Recent content on 小明的博客</description>
+    <title>Posts on 小明的博客</title>
+    <link>https://4everming.github.io/posts/</link>
+    <description>Recent content in Posts on 小明的博客</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en-us</language>
-    <lastBuildDate>Sat, 10 Jul 2021 08:47:11 +0100</lastBuildDate><atom:link href="https://4everming.github.io/index.xml" rel="self" type="application/rss+xml" />
+    <lastBuildDate>Sat, 10 Jul 2021 08:47:11 +0100</lastBuildDate><atom:link href="https://4everming.github.io/posts/index.xml" rel="self" type="application/rss+xml" />
     <item>
       <title>在Kubernetes中使用Bitfusion</title>
       <link>https://4everming.github.io/posts/bitfusion-on-kubernetes%E4%B8%AD%E6%96%87/</link>
@@ -19,15 +19,6 @@
  1.bitfusion-device-plugin 2.bitfusion-webhook  组件1和组件2分别内置在独立的Docker 镜像中。 bitfusion-device-plugin 作为DaemonSet 运行在kubelet所在的每个工作节点上。 bitfusion-webhook 作为Deployment 运行在Kubernetes主节点上。
 2.前置条件  安装机器的操作系统为Ubuntu Linux OpenSSL需要安装在Ubuntu上 Kubernetes 1.17+ Bitfusion 2.5+ kubectl和docker命令可以正常使用  如果需要启用配额功能，需要更新以下的yaml文件。
  修改bitfusion-injector.yaml文件。  vim bitfusion-with-kubernetes-integration/bitfusion_device_plugin/webhook/deployment/bitfusion-injector.yaml  为TOTAL_GPU_MEMORY设置合适的值，TOTAL_GPU_MEMORY代表Bitfusion Server所管理的GPU物理设备的显存大小，单位是MB。  apiVersion: apps/v1 ... env: - name: TOTAL_GPU_MEMORY value: 16000 ... 2.1 获取Bitfusion的token文件 为了启用Bitfusion，用户必须生成一个用于授权的Bitfusion Token，并将相关的tar文件下载到安装机器上。 按照以下步骤从vCenter获取Token:Step 1. 登录 vCenterStep 2. 在插件部分点击BitfusionStep 3.</description>
-    </item>
-    
-    <item>
-      <title>搜索</title>
-      <link>https://4everming.github.io/search/</link>
-      <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
-      
-      <guid>https://4everming.github.io/search/</guid>
-      <description></description>
     </item>
     
   </channel>
