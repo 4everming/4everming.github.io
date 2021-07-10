@@ -69,7 +69,133 @@
                 <div class="col-8" id="main">
                     
 <div class="res-cons">
-    
+    <style type="text/css">
+    .post-toc {
+        position: fixed;
+        width: 200px;
+        margin-left: -210px;
+        padding: 5px 10px;
+        font-family: Athelas, STHeiti, Microsoft Yahei, serif;
+        font-size: 12px;
+        border: 1px solid rgba(0, 0, 0, .07);
+        border-radius: 5px;
+        background-color: rgba(255, 255, 255, 0.98);
+        background-clip: padding-box;
+        -webkit-box-shadow: 1px 1px 2px rgba(0, 0, 0, .125);
+        box-shadow: 1px 1px 2px rgba(0, 0, 0, .125);
+        word-wrap: break-word;
+        white-space: nowrap;
+        -webkit-box-sizing: border-box;
+        box-sizing: border-box;
+        z-index: 999;
+        cursor: pointer;
+        max-height: 70%;
+        overflow-y: auto;
+        overflow-x: hidden;
+    }
+
+    .post-toc .post-toc-title {
+        width: 100%;
+        margin: 0 auto;
+        font-size: 20px;
+        font-weight: 400;
+        text-transform: uppercase;
+        text-align: center;
+    }
+
+    .post-toc .post-toc-content {
+        font-size: 15px;
+    }
+
+    .post-toc .post-toc-content>nav>ul {
+        margin: 10px 0;
+    }
+
+    .post-toc .post-toc-content ul {
+        padding-left: 20px;
+        list-style: square;
+        margin: 0.5em;
+        line-height: 1.8em;
+    }
+
+    .post-toc .post-toc-content ul ul {
+        padding-left: 15px;
+        display: none;
+    }
+
+    @media print,
+    screen and (max-width:1057px) {
+        .post-toc {
+            display: none;
+        }
+    }
+</style>
+<div class="post-toc" style="position: absolute; top: 188px;">
+    <h2 class="post-toc-title">文章目录</h2>
+    <div class="post-toc-content">
+        <nav id="TableOfContents">
+  <ul>
+    <li><a href="#1架构">1.架构</a></li>
+    <li><a href="#2前置条件">2.前置条件</a>
+      <ul>
+        <li><a href="#21-获取bitfusion的token文件">2.1 获取Bitfusion的token文件</a></li>
+        <li><a href="#22-使用bitfusion-baremetal-token创建kubernetes-secret">2.2 使用Bitfusion Baremetal token创建Kubernetes secret</a></li>
+      </ul>
+    </li>
+    <li><a href="#3快速开始">3.快速开始</a>
+      <ul>
+        <li><a href="#31-部署方式1-使用已经构建好的容器镜像部署-推荐">3.1 部署方式1: 使用已经构建好的容器镜像部署 (推荐)</a></li>
+        <li><a href="#32-部署方式2-使用代码构建容器镜像并用生成的镜像部署">3.2 部署方式2: 使用代码构建容器镜像，并用生成的镜像部署</a></li>
+        <li><a href="#33-部署的环境的验证">3.3 部署的环境的验证</a></li>
+      </ul>
+    </li>
+    <li><a href="#4-在kubernetes中使用bitfusion资源创建任务">4. 在Kubernetes中使用Bitfusion资源创建任务</a>
+      <ul>
+        <li><a href="#41-方式-1通过-gpu-percent-参数指定bitfusion资源">4.1. 方式 1：通过 gpu-percent 参数指定Bitfusion资源</a></li>
+        <li><a href="#42-方式-2通过-gpu-memory-参数指定bitfusion资源">4.2 方式 2：通过 gpu-memory 参数指定Bitfusion资源</a></li>
+        <li><a href="#43-auto-managementbitfusion的设置">4.3 auto-management/bitfusion的设置</a></li>
+      </ul>
+    </li>
+    <li><a href="#5-配额的设置和使用可选">5. 配额的设置和使用(可选)</a>
+      <ul>
+        <li><a href="#51-设置配额">5.1 设置配额</a></li>
+        <li><a href="#52-指定bitfusioniogpu-memory参数创建pod">5.2 指定bitfusion.io/gpu-memory参数创建pod：</a></li>
+        <li><a href="#53-指定bitfusioniogpu-percent参数创建pod">5.3 指定bitfusion.io/gpu-percent参数创建pod</a></li>
+      </ul>
+    </li>
+    <li><a href="#6troubleshooting">6.Troubleshooting</a></li>
+    <li><a href="#7-备注">7. 备注</a></li>
+  </ul>
+</nav>
+    </div>
+</div>
+<script type="text/javascript">
+    $(document).ready(function () {
+        var postToc = $(".post-toc");
+        if (postToc.length) {
+            var leftPos = $("#main").offset().left;
+            if(leftPos<220){
+                postToc.css({"width":leftPos-10,"margin-left":(0-leftPos)})
+            }
+
+            var t = postToc.offset().top - 20,
+                a = {
+                    start: {
+                        position: "absolute",
+                        top: t
+                    },
+                    process: {
+                        position: "fixed",
+                        top: 20
+                    },
+                };
+            $(window).scroll(function () {
+                var e = $(window).scrollTop();
+                e < t ? postToc.css(a.start) : postToc.css(a.process)
+            })
+        }
+    })
+</script>
     <article class="post">
         <header>
             <h1 class="post-title">在Kubernetes中使用Bitfusion</h1>
@@ -98,7 +224,7 @@ Bitfusion将GPU作为一等公民，使得GPU可以像计算资源一样被抽�
 <p>本项目通过允许Kubernetes使用Bitfusion的方式来解决这些问题</p>
 <h2 id="1架构">1.架构</h2>
 <p>
-        <img class="mx-auto" alt="" src="https://github.com/vmware/bitfusion-with-kubernetes-integration/blob/main/bitfusion_device_plugin/diagrams/DevicePluginArchitecture.png" />   
+        <img class="mx-auto" alt="" src="https://raw.githubusercontent.com/vmware/bitfusion-with-kubernetes-integration/main/bitfusion_device_plugin/diagrams/DevicePluginArchitecture.png" />   
     </p>
 <p>我们通过以下两个组件来实现允许Kubernetes使用Bitfusion的目的。</p>
 <ul>
@@ -137,15 +263,15 @@ Bitfusion将GPU作为一等公民，使得GPU可以像计算资源一样被抽�
 Step 1. 登录 vCenter<!-- raw HTML omitted -->
 Step 2. 在插件部分点击Bitfusion<!-- raw HTML omitted -->
 
-        <img class="mx-auto" alt="" src="https://github.com/vmware/bitfusion-with-kubernetes-integration/blob/main/bitfusion_device_plugin/diagrams/click-bitfusion-plugin.png" />   
+        <img class="mx-auto" alt="" src="https://raw.githubusercontent.com/vmware/bitfusion-with-kubernetes-integration/blob/main/bitfusion_device_plugin/diagrams/click-bitfusion-plugin.png" />   
     </p>
 <p>Step 3. 选择Tokens 标签，然后选择要下载的适当的token<!-- raw HTML omitted -->
 
-        <img class="mx-auto" alt="" src="https://github.com/vmware/bitfusion-with-kubernetes-integration/blob/main/bitfusion_device_plugin/diagrams/click-tokens-tag.png" />   
+        <img class="mx-auto" alt="" src="https://raw.githubusercontent.com/vmware/bitfusion-with-kubernetes-integration/blob/main/bitfusion_device_plugin/diagrams/click-tokens-tag.png" />   
     </p>
 <p>Step 4. 点击 DOWNLOAD 按钮, 在此之前需要确保token是可用的<!-- raw HTML omitted -->
 
-        <img class="mx-auto" alt="" src="https://github.com/vmware/bitfusion-with-kubernetes-integration/blob/main/bitfusion_device_plugin/diagrams/click-download-tag.png" />   
+        <img class="mx-auto" alt="" src="https://raw.githubusercontent.com/vmware/bitfusion-with-kubernetes-integration/blob/main/bitfusion_device_plugin/diagrams/click-download-tag.png" />   
     </p>
 <p>如果列表中没有可用的token, 需要点击 NEW TOKEN 来创建Token.
 更多详情，请参阅:
@@ -581,7 +707,7 @@ EOF
 </code></pre></div><p>“tensorflow-benchmark”是pod的命名空间。“bf-pkgs”是pod的名称</p>
 <p>下面的日志显示了一些连接Bitfusion server的错误
 
-        <img class="mx-auto" alt="" src="https://github.com/vmware/bitfusion-with-kubernetes-integration/blob/main/bitfusion_device_plugin/diagrams/trouble-one.png" />   
+        <img class="mx-auto" alt="" src="https://raw.githubusercontent.com/vmware/bitfusion-with-kubernetes-integration/blob/main/bitfusion_device_plugin/diagrams/trouble-one.png" />   
     </p>
 <p>检查vCenter Bitfusion插件中Bitfusion token的有效性。重新下载一个新的token，并使用以下命令更新Kubernetes中的secret :(确保在Kubernetes的每个命名空间中删除所有旧的bitfusion-secret之后再新建secret)</p>
 <div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-shell" data-lang="shell">$ kubectl delete secret -n kube-system bitfusion-secret
